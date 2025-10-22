@@ -65,7 +65,7 @@ def Bestandscheck(Geldbetrag, WeißeKE, BlaueKE):
     if SchuldenSumme == None:
         SchuldenSumme = 0
     # Abrechnung
-    Fehlbetrag = (Geldbetrag - letzterStand[0][0]) - (BonSumme + SchuldenSumme) - 0.25*(WeißeKE - letzterStand[1][0]) - 0.5*(BlaueKE - letzterStand[2][0])
+    Fehlbetrag = (Geldbetrag - letzterStand[0]) + (BonSumme + SchuldenSumme) - 0.25*(WeißeKE - letzterStand[1]) - 0.5*(BlaueKE - letzterStand[2])
     return Fehlbetrag
     
 
@@ -80,7 +80,7 @@ def Bestandsmeldung(Geldbetrag, WeißeKE, BlaueKE, Grund):
         pass
         # trotzdem einfügen? - über den ganzen Öffnungszyklus checken? 
     # Bestandsmeludng einfügen
-    Values = "(" + str(Grund) + ", " + str(aktuellKey) + ", " + str(Geldbetrag) + ", " + str(WeißeKE) + ", " + str(BlaueKE) + ");"
+    Values = "('" + str(Grund) + "', " + str(aktuellKey) + ", " + str(Geldbetrag) + ", " + str(WeißeKE) + ", " + str(BlaueKE) + ");"
     query = "INSERT INTO Kassenstand (Art, Verantwortlich, Barbestand, KEWeiß, KEBlau) VALUES" + Values
     cur.execute(query)
     con.commit()
@@ -120,14 +120,14 @@ def AliasAendern(Vorname, Nachname, Alias):
         pass
     else:
         # setzt den Alias des Mitglieds (egal, ob der bereits so war)
-        query = "UPDATE User SET Alias = " + str(Alias) + "WHERE ID = " + str(MitgliedKey) + ";" 
+        query = "UPDATE User SET Alias = '" + str(Alias) + "' WHERE ID = " + str(MitgliedKey) + ";" 
         cur.execute(query)
         con.commit()
 
 def NamenAendern(altVorname, altNachname, neuVorname, neuNachname):
     # ändert den Klarnamen eines Mitglieds
     MitgliedKey = KeyMitglied(altVorname, altNachname)
-    query = "UPDATE User SET Vorname = " + str(neuVorname) +", Nachname = " + str(neuNachname) + " WHERE ID = " + str(MitgliedKey) +";"
+    query = "UPDATE User SET Vorname = '" + str(neuVorname) +"', Nachname = '" + str(neuNachname) + "' WHERE ID = " + str(MitgliedKey) +";"
     cur.execute(query)
     con.commit()
 
@@ -192,7 +192,7 @@ def Schuldenbezahlt(Betrag, Vorname, Nachname = None):
     aktuellKey = Verantwortlich() 
     # -eurobetrag  als Schulden bei Name hinzufügen
     MitgliedKey = getKey(Vorname, Nachname)
-    query = "INSERT INTO Schuldenliste (Mitglied, Betrag, Verantwortlich) VALUES (" + str(MitgliedKey) + ", " + str(Betrag) + ", " + str(aktuellKey) + ");"
+    query = "INSERT INTO Schuldenliste (Mitglied, Betrag, Verantwortlich) VALUES (" + str(MitgliedKey) + ", " + str(-Betrag) + ", " + str(aktuellKey) + ");"
     cur.execute(query)
     con.commit()
     # ggf rot entfernen
@@ -210,6 +210,7 @@ def Schuldenbezahlt(Betrag, Vorname, Nachname = None):
             con.commit()
 
 
+# erst Namen dann Zweck?
 def eingereichterBon(Betrag, Zweck = "keine Angabe", Vorname = None, Nachname = None):
     # Abfrage jetzt veantwortlich (key)
     aktuellKey = Verantwortlich() 
@@ -218,7 +219,7 @@ def eingereichterBon(Betrag, Zweck = "keine Angabe", Vorname = None, Nachname = 
         MitgliedKey = getKey(Vorname, Nachname)
     else:
         MitgliedKey = aktuellKey
-    Values = "(" + str(MitgliedKey) + ", " + str(Betrag) + ", " +str(aktuellKey) + ", " +str(Zweck) +  ");"
+    Values = "(" + str(MitgliedKey) + ", " + str(Betrag) + ", " +str(aktuellKey) + ", '" +str(Zweck) +  "');"
     query = "INSERT INTO Bons (Mitglied, Betrag, Verantwortlich, Zweck) VALUES " + Values
     cur.execute(query)
     con.commit()
@@ -228,30 +229,35 @@ def Schlitzgeld(Betrag):
     # als Bon einführen mit Zweck Schlitz
     eingereichterBon(Betrag, "Schlitz")
 
+#bisher noch keine Logik in Öffnung - Übergabe - Schließung
 
 # Vorname, Nachname von ab jetzt verantwortlich
-def Cafeöffnung(abjetztVerantwortlich, Geldbetrag, WeißeKE, BlaueKE):
+def Cafeöffnung(Geldbetrag, WeißeKE, BlaueKE, Vorname, Nachname = None):
     # Abfrage key abjetztVaerantwortlich
-    neuKey = getKey(abjetztVerantwortlich)
+    neuKey = getKey(Vorname, Nachname)
     # Bestandsmeldung (Öffnung)
-    Bestandsmeldung(Geldbetrag, WeißeKE, BlaueKE, "Öffnung")
+    Bestandsmeldung(Geldbetrag, WeißeKE, BlaueKE, "Öffnung") 
+    # ändere Verantwortung bei Öffnung
+    query = "UPDATE Kassenstand SET Verantwortlich = " + str(neuKey) + " WHERE ID = (SELECT MAX(ID) FROM Kassenstand);"
+    cur.execute(query)
+    con.commit()
     # Übergabe cafe -> Person
     Uebergabe(0, neuKey)
-    
+
 
 # Vorname, Nachname von ab jetzt verantwortlich
-def Verantwortungsübergabe(abjetztVerantwortlich, Geldbetrag, WeißeKE, BlaueKE):
+def Verantwortungsübergabe(Geldbetrag, WeißeKE, BlaueKE, Vorname, Nachname = None):
     # Abfrage jetzt veantwortlich (key)
     altKey = Verantwortlich()
     # Abfrage key abjetztVaerantwortlich
-    neuKey = getKey(abjetztVerantwortlich)
+    neuKey = getKey(Vorname, Nachname)
     # Bestandsmeldung (Übergabe)
     Bestandsmeldung(Geldbetrag, WeißeKE, BlaueKE, "Zwischen")
     # Übergabe
     Uebergabe(altKey, neuKey)
-    
 
-def Cefeschließung(Geldbetrag, WeißeKE, BlaueKE):
+
+def Cafeschließung(Geldbetrag, WeißeKE, BlaueKE):
     # Abfrage jetzt veantwortlich (key)
     altKey = Verantwortlich()
     # Bestandsmeldung (Schließung)
@@ -275,3 +281,73 @@ def meineSchulden(Vorname, Nachname = None):
 """
 Storno (pro aktion letzte Aktion?)
 """
+
+
+#############
+#Demo
+q1 = "INSERT INTO Kassenstand (Art, Verantwortlich, Barbestand, KEWeiß, KEBlau) VALUES ('Schließung', 0, 40, 615027, 528993);"
+cur.execute(q1)
+con.commit()
+q2 = "INSERT INTO Uebergabe (BisherVerantwortlich, Verantwortlich) VALUES (0, 0);"
+cur.execute(q2)
+con.commit()
+
+
+print(neuesMitglied('Mathe', 'Cafe'))
+print(AliasAendern('Mathe', 'Cafe', 'Cafe'))
+
+print(neuesMitglied('Donald', 'Duck'))
+print(AliasAendern('Donald', 'Duck', 'Dr. Don'))
+
+
+
+
+print(Striche(4, 'Donald', 'Duck'))
+print(Striche(5, 'Dr. Don'))
+
+print(meineSchulden('Dr. Don'))
+
+print(Schuldenbezahlt(5, 'Dr. Don'))
+print(meineSchulden('Dr. Don'))
+
+
+
+
+
+
+print(neuesMitglied('Mickie', 'Msus'))
+print(NamenAendern('Mickie', 'Msus', 'Micky', 'Maus'))
+
+print(neuesMitglied('Daisy', 'Duck'))
+print(neuesMitglied('Gustav', 'Gans'))
+print(neuesMitglied('Donna', 'Duck'))
+print(neuesMitglied('Indiana', 'Goof'))
+
+
+
+print(Cafeöffnung(45, 615027, 528993, 'Dr. Don'))
+print(eingereichterBon(2, "Brötchen"))
+print(Schuldenbezahlt(2, 'Dr. Don'))
+print(Schuldenbezahlt(10, 'Gustav', 'Gans'))
+
+print(Verantwortungsübergabe(60, 615035, 528999, 'Micky', 'Maus'))
+print(eingereichterBon(65, "Getränke SAP"))
+print(Schuldenbezahlt(65, 'Micky', 'Maus'))
+print(eingereichterBon(32, "Einkauf REWE", 'Donna', 'Duck'))
+print(Schuldenbezahlt(32, 'Donna', 'Duck'))
+print(Schuldenbezahlt(10, 'Indiana', 'Goof'))
+
+print(Verantwortungsübergabe(100, 615083, 529035, 'Daisy', 'Duck'))
+print(Schuldenbezahlt(50, 'Daisy', 'Duck'))
+print(Schlitzgeld(100))
+
+print(Cafeschließung(65, 615107, 529053))
+
+
+
+
+
+
+#print(Striche(4, 'Micky', 'Maus'))
+#print(Striche(5, 'Maxi'))
+#print(meineSchulden('Maxi'))

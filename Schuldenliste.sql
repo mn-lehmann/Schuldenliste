@@ -12,7 +12,8 @@ CREATE TABLE User(
 );
 
 
-UPDATE User SET Vorname = neuVorname, Nachname = neuNachname WHERE ID = MItgliedkEy
+
+--UPDATE User SET Vorname = neuVorname, Nachname = neuNachname WHERE ID = MItgliedkEy
 
 
 -- Schuldenliste, positiver Betrag = Striche, negativ = Einzahlung
@@ -74,23 +75,8 @@ CREATE TABLE Uebergabe(
     FOREIGN KEY (Verantwortlich) REFERENCES User(ID)
 );
 
-
-INSERT INTO Schuldenliste (Mitglied, Betrag, Verantwortlich) VALUES (2, 4.0, 1);
-
-
-SELECT Mitglied, Sum(Betrag) Schulden FROM Schuldenliste GROUP BY Mitglied;
-
-
-
-
-UPDATE User SET Rot = 2 WHERE ID IN (SELECT Mitglied FROM (SELECT Mitglied, Sum(Betrag) Schulden FROM Schuldenliste GROUP BY Mitglied) WHERE Schulden >= 5 INTERSECT SELECT ID FROM User WHERE Rot = 1);
-
-
-
-
-
-SELECT ID FROM User WHERE Rot = 1;
-
-UPDATE User SET Rot = 0 WHERE ID = 2; 
-
-SELECT * FROM User;
+--DELETE FROM User;
+--DELETE FROM Schuldenliste;
+--DELETE FROM Bons;
+--DELETE FROM Kassenstand;
+--DELETE From Uebergabe;
