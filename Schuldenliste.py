@@ -229,10 +229,16 @@ def Schlitzgeld(Betrag):
     # als Bon einführen mit Zweck Schlitz
     eingereichterBon(Betrag, "Schlitz")
 
-#bisher noch keine Logik in Öffnung - Übergabe - Schließung
 
 # Vorname, Nachname von ab jetzt verantwortlich
 def Cafeöffnung(Geldbetrag, WeißeKE, BlaueKE, Vorname, Nachname = None):
+    # Öffnung möglich
+    query = "SELECT Art FROM Kassenstand WHERE ID = (SELECT MAX(ID) FROM Kassenstand);"
+    normals = cur.execute(query)
+    lastcheck = normals.fetchone()[0]
+    if lastcheck != "Schließung":
+        print('Cafe ist bereits offen')
+        pass
     # Abfrage key abjetztVaerantwortlich
     neuKey = getKey(Vorname, Nachname)
     # Bestandsmeldung (Öffnung)
@@ -247,6 +253,13 @@ def Cafeöffnung(Geldbetrag, WeißeKE, BlaueKE, Vorname, Nachname = None):
 
 # Vorname, Nachname von ab jetzt verantwortlich
 def Verantwortungsübergabe(Geldbetrag, WeißeKE, BlaueKE, Vorname, Nachname = None):
+    # Übergabe möglich
+    query = "SELECT Art FROM Kassenstand WHERE ID = (SELECT MAX(ID) FROM Kassenstand);"
+    normals = cur.execute(query)
+    lastcheck = normals.fetchone()[0]
+    if lastcheck == "Schließung":
+        print('Cafe muss erst geöffnet werden')
+        pass
     # Abfrage jetzt veantwortlich (key)
     altKey = Verantwortlich()
     # Abfrage key abjetztVaerantwortlich
@@ -258,6 +271,13 @@ def Verantwortungsübergabe(Geldbetrag, WeißeKE, BlaueKE, Vorname, Nachname = N
 
 
 def Cafeschließung(Geldbetrag, WeißeKE, BlaueKE):
+    # Schließung möglich
+    query = "SELECT Art FROM Kassenstand WHERE ID = (SELECT MAX(ID) FROM Kassenstand);"
+    normals = cur.execute(query)
+    lastcheck = normals.fetchone()[0]
+    if lastcheck == "Schließung":
+        print('Cafe ist bereits geschlossen')
+        pass
     # Abfrage jetzt veantwortlich (key)
     altKey = Verantwortlich()
     # Bestandsmeldung (Schließung)
