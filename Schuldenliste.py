@@ -1,7 +1,11 @@
+from openpyxl import load_workbook
+import locale, datetime
+locale.setlocale(locale.LC_TIME, locale.normalize("de"))
 import sqlite3
 con = sqlite3.connect('Schuldenliste.db')
 cur = con.cursor()
-
+# just for debugging
+from time import sleep
 
 # interne Funktionen
 
@@ -89,6 +93,118 @@ def Uebergabe(altverant, neuverant):
     query = "INSERT INTO Uebergabe (BisherVerantwortlich, Verantwortlich) VALUES (" + str(altverant) + ", " + str(neuverant) + ");"
     cur.execute(query)
     con.commit()
+
+def getName(key):
+    query = "SELECT Alias FROM User WHERE ID ='" + str(key) + "';"
+    normals = cur.execute(query)
+    X = normals.fetchone()[0]
+    if X != None:
+        return X
+    query = "SELECT Vorname, Nachname FROM User WHERE ID ='" + str(key) + "';"
+    normals = cur.execute(query)
+    X = normals.fetchone()
+    return X[0]+' '+X[1]
+
+
+# Probleme: bisher nur eine Exel-Tablelle mur max 6 Schichtübergaben + Schließung pro Tag und pro Schicht max 8 Umsatzeinträge
+def Kassenbuch():
+    # alle Übergaben während Öffnung
+    query = "SELECT Datum, Zeitpunkt, Barbestand, KEWeiß, KEBlau, Verantwortlich FROM Kassenstand WHERE ID>=(SELECT MAX(ID) FROM Kassenstand WHERE Art = 'Öffnung')"
+    normals = cur.execute(query)
+    Uebergaben = normals.fetchall()
+    # alle Verantwotlichen während der Öffnung
+    query = "SELECT Verantwortlich FROM Uebergabe WHERE ID >= (SELECT MAX(ID) FROM Uebergabe WHERE BisherVerantwortlich = 0)"
+    normals = cur.execute(query)
+    Verantwortlich = normals.fetchall()
+    # Bearbeitung der Tabelle
+    wb = load_workbook("kassenbuch.xlsx")
+    ws = wb.active 
+    day = Uebergaben[0][0][8:]
+    month = Uebergaben[0][0][5:7] 
+    year = Uebergaben[0][0][:4]
+    x = datetime.datetime(int(year), int(month), int(day))
+    ws['C1'] = x.strftime("%A") 
+    ws['E1'] = day+'.'+month+'.'+year
+    if len(Uebergaben)-1 >= 6:
+        print("zu viele Übergaben - aktuell nicht implementiert")  
+    for handover in range(len(Uebergaben)-1):
+        # Zeitpunkt der Öffnung/Übergabe
+        ws['A'+ str(4+7*handover)] = Uebergaben[handover][1][:5]
+        # Kassenstand zur Öffnung/Übergabe
+        ws['B'+ str(4+7*handover)] = str(Uebergaben[handover][2])+'€'
+        # Markenummer weiß zur Öffnung/Übergabe
+        ws['C'+ str(4+7*handover)] = Uebergaben[handover][3]
+        # Markenummer blau zur Öffnung/Übergabe
+        ws['D'+ str(4+7*handover)] = Uebergaben[handover][4]
+        # Öffnung/Übergabe gezählt von
+        ws['E'+ str(4+7*handover)] = getName(Uebergaben[handover][5])
+        # ab jetzt verantwortlich
+        ws['C'+ str(5+7*handover)] = getName(Verantwortlich[handover][0])
+        # alle Bons in dem Zeitraum
+        query = "SELECT Mitglied, Betrag, Zweck FROM Bons WHERE Datum >= '" + Uebergaben[handover][0] + "' AND Zeitpunkt >= '" + Uebergaben[handover][1] + "' AND Datum <= '" + Uebergaben[handover+1][0] + "' AND Zeitpunkt < '" + Uebergaben[handover+1][1] + "'"
+        normals = cur.execute(query)
+        Bons = normals.fetchall()
+        # alle bezahlten Schulden in dem Zeitraum
+        query = "SELECT Mitglied, Betrag FROM Schuldenliste WHERE Datum >= '" + Uebergaben[handover][0] + "' AND Zeitpunkt >= '" + Uebergaben[handover][1] + "' AND Datum <= '" + Uebergaben[handover+1][0] + "' AND Zeitpunkt < '" + Uebergaben[handover+1][1] + "' AND Betrag < 0"
+        normals = cur.execute(query)
+        Schulden = normals.fetchall()        
+        # alle Umsätze in dem Zeitraum
+        Umsaetze = []
+        for x in range(len(Bons)):
+            for y in Schulden:
+                if Bons[x][0] == y[0] and Bons[x][1] == -y[1]:
+                    Umsaetze.append((Bons[x][0], '±'+str(Bons[x][1]), Bons[x][2]+"/Schulden"))
+                    break
+            if len(Umsaetze) <= x:
+                Umsaetze.append(Bons[x])
+        for y in Schulden:
+            done = 0
+            for x in Umsaetze:
+                if y[0] == x[0] and type(x[1]) == str and float(x[1][1:]) == -y[1]:
+                    done = 1
+                    break
+            if done == 0:
+                Umsaetze.append((y[0], "+" + str(-1*y[1]), "Schulden"))
+        # Einfügen der Umsätze in die Tabelle
+        if len(Umsaetze) >= 9:
+            print("zu viele Umsätze - aktuell nicht implementiert")            
+        for trans in range(len(Umsaetze)):
+            Mitglied = getName(Umsaetze[trans][0])
+            if Umsaetze[trans][2] == 'Schlitz':
+                Eintrag = "-"+str(Umsaetze[trans][1]) +"€ " + Umsaetze[trans][2]
+            else:
+                Eintrag = str(Umsaetze[trans][1]) +"€ " + Umsaetze[trans][2] + " " + Mitglied
+            if trans < 4:
+                ws['B'+ str(6+trans+7*handover)] = Eintrag
+            else:
+                ws['D'+ str(6+trans-4+7*handover)] = Eintrag
+    # Tagesabschluss
+    # Zeitpunkt der Schließung
+    ws['A53'] = Uebergaben[-1][1][:5]
+    # Kassenstand zur Schließung
+    ws['C58'] = str(Uebergaben[-1][2])+'€'
+    # Markenummer weiß zur Schließung
+    ws['C54'] = Uebergaben[-1][3]
+    # Markenummer blau zur Schließung
+    ws['C55'] = Uebergaben[-1][4]
+    # Abrechnung gemacht von
+    ws['E58'] = getName(Uebergaben[-1][5])
+    # Markenumsätze
+    ws['E54'] = (ws['C54'].value - ws['C4'].value)/4 + (ws['C55'].value - ws['D4'].value)/2
+    # Summe der Bons während Öffnung
+    query = "SELECT SUM(Betrag) FROM Bons WHERE Datum >= (SELECT Datum FROM Kassenstand WHERE ID = (SELECT MAX(ID) FROM Kassenstand WHERE Art = 'Öffnung')) AND Zeitpunkt >= (SELECT Zeitpunkt FROM Kassenstand WHERE ID = (SELECT MAX(ID) FROM Kassenstand WHERE Art = 'Öffnung'))"
+    normals = cur.execute(query)
+    Bonsumme = normals.fetchone()
+    # Summe der bezahlten Schulden während Öffnung
+    query = "SELECT SUM(Betrag) FROM Schuldenliste WHERE Datum >= (SELECT Datum FROM Kassenstand WHERE ID = (SELECT MAX(ID) FROM Kassenstand WHERE Art = 'Öffnung')) AND Zeitpunkt >= (SELECT Zeitpunkt FROM Kassenstand WHERE ID = (SELECT MAX(ID) FROM Kassenstand WHERE Art = 'Öffnung')) AND Betrag < 0"
+    normals = cur.execute(query)
+    Schuldensumme = normals.fetchone()
+    ws['E55'] = -1*(Bonsumme[0]+Schuldensumme[0])
+    # Gesmtsumme der Umsätze
+    ws['E56'] = ws['E54'].value + ws['E55'].value
+    wb.save('test.xlsx')
+
+
 
 
 # Member-Amt Funktionen
@@ -285,8 +401,8 @@ def Cafeschließung(Geldbetrag, WeißeKE, BlaueKE):
     # Übergabe Person -> Cafe
     Uebergabe(altKey, 0)
     # Abrechnung aller Schichten incl Fehler (in pdf?)
-    pass
-    # bisher noch nicht implementiert
+    # todo: Fehlermeldungen in der pdf
+    Kassenbuch()
 
 
 
@@ -302,9 +418,13 @@ def meineSchulden(Vorname, Nachname = None):
 Storno (pro aktion letzte Aktion?)
 """
 
+"""
+Was passiert bei Anbruch einer neuen Rolle Marken?
+"""
 
 #############
 #Demo
+"""
 q1 = "INSERT INTO Kassenstand (Art, Verantwortlich, Barbestand, KEWeiß, KEBlau) VALUES ('Schließung', 0, 40, 615027, 528993);"
 cur.execute(q1)
 con.commit()
@@ -332,9 +452,6 @@ print(meineSchulden('Dr. Don'))
 
 
 
-
-
-
 print(neuesMitglied('Mickie', 'Msus'))
 print(NamenAendern('Mickie', 'Msus', 'Micky', 'Maus'))
 
@@ -344,25 +461,33 @@ print(neuesMitglied('Donna', 'Duck'))
 print(neuesMitglied('Indiana', 'Goof'))
 
 
-
+time.sleep(1)
 print(Cafeöffnung(45, 615027, 528993, 'Dr. Don'))
+time.sleep(1)
 print(eingereichterBon(2, "Brötchen"))
 print(Schuldenbezahlt(2, 'Dr. Don'))
 print(Schuldenbezahlt(10, 'Gustav', 'Gans'))
 
+time.sleep(1)
 print(Verantwortungsübergabe(60, 615035, 528999, 'Micky', 'Maus'))
+time.sleep(1)
 print(eingereichterBon(65, "Getränke SAP"))
 print(Schuldenbezahlt(65, 'Micky', 'Maus'))
 print(eingereichterBon(32, "Einkauf REWE", 'Donna', 'Duck'))
 print(Schuldenbezahlt(32, 'Donna', 'Duck'))
 print(Schuldenbezahlt(10, 'Indiana', 'Goof'))
 
+time.sleep(1)
 print(Verantwortungsübergabe(100, 615083, 529035, 'Daisy', 'Duck'))
+time.sleep(1)
 print(Schuldenbezahlt(50, 'Daisy', 'Duck'))
 print(Schlitzgeld(100))
 
+time.sleep(1)
 print(Cafeschließung(65, 615107, 529053))
+"""
 
+#Kassenbuch()
 
 
 
